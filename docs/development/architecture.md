@@ -58,6 +58,13 @@ pending-consent table shares its cap by caller in the same way, but `oauth.enc` 
 keyed pseudonym of the caller's network, whose key is random per process and never written, so
 nothing on disk leads back to an address. Per-app revocation is separate from SchoolSoft logout.
 
+The private-network deployment can opt into desktop OAuth callbacks with
+`SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS=1`. Only HTTP loopback URLs with an explicit
+port and no credentials, query or fragment are added to the callback allowlist;
+the registered URI is still matched exactly during authorization and exchange.
+This is separate from SchoolSoft's HTTPS callback to the connector. See the
+[Traefik deployment](../deployment/traefik.md).
+
 **REST surface.** `/api/v1` is a third adapter inside the connector, for custom UIs
 ([reference](../reference/rest-api.md), [spec](../planning/specs/2026-09-26-rest-surface.md)).
 `src/http/routes.ts` generates one GET route per connector operation from the

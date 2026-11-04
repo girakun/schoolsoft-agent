@@ -93,6 +93,8 @@ interface Options {
    * next to the vendor allowlist. Compared as whole strings: no prefix, query or variant.
    */
   ownCallbacks?: readonly string[];
+  /** Opt-in RFC 8252 loopback callbacks for desktop MCP clients. */
+  allowLoopbackClients?: boolean;
 }
 /** Bounds on state that anonymous callers can create. */
 const LIMITS = { clients: 256, pending: 128, pendingPerRequester: 8 };
@@ -104,22 +106,22 @@ const issuedAt = (client: OAuthClientInformationFull) => client.client_id_issued
 const PSEUDONYM = "h:";
 
 /** Callback destinations are exact known vendor paths; never fetch client-supplied URLs. */
-export function approvedRedirect(value: string): boolean {
+export function approvedRedirect(value: string, allowLoopbackClients = false): boolean {
   let url: URL;
   try {
     url = new URL(value);
   } catch {
     return false;
   }
+  if (url.username || url.password || url.search || url.hash) return false;
   if (
-    url.protocol !== "https:" ||
-    url.username ||
-    url.password ||
-    url.port ||
-    url.search ||
-    url.hash
+    allowLoopbackClients &&
+    url.protocol === "http:" &&
+    ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname) &&
+    url.port !== ""
   )
-    return false;
+    return true;
+  if (url.protocol !== "https:" || url.port) return false;
   return (
     (url.hostname === "claude.ai" && url.pathname === "/api/mcp/auth_callback") ||
     (url.hostname === "chatgpt.com" &&
@@ -198,7 +200,10 @@ export class ConnectorOAuthProvider implements OAuthServerProvider {
     if (plain.length) this.save();
   }
   private callbackAllowed(uri: string): boolean {
-    return approvedRedirect(uri) || (this.options.ownCallbacks ?? []).includes(uri);
+    return (
+      approvedRedirect(uri, this.options.allowLoopbackClients) ||
+      (this.options.ownCallbacks ?? []).includes(uri)
+    );
   }
   private clientInUse(id: string): boolean {
     return (

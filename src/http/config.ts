@@ -5,6 +5,8 @@ export interface ConnectorConfig {
   publicUrl: string;
   /** Reverse proxies in front whose forwarding header is trusted; 0 trusts none. */
   proxyHops: number;
+  /** Permit desktop MCP clients to receive OAuth codes on their loopback listener. */
+  allowLoopbackClients?: boolean;
   adminPassword: string;
   storageKey: Buffer;
   stateDir: string;
@@ -57,8 +59,12 @@ export function connectorConfig(env: Record<string, string | undefined>): Connec
   const proxyHops = Number(env.SCHOOLSOFT_PROXY_HOPS ?? 0);
   if (!Number.isInteger(proxyHops) || proxyHops < 0 || proxyHops > 2)
     throw new InputError("SCHOOLSOFT_PROXY_HOPS must be 0, 1 or 2");
+  const loopback = env.SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS ?? "0";
+  if (loopback !== "0" && loopback !== "1")
+    throw new InputError("SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS must be 0 or 1");
   return {
     proxyHops,
+    allowLoopbackClients: loopback === "1",
     publicUrl: url.origin,
     adminPassword,
     storageKey,

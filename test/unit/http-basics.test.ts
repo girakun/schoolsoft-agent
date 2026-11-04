@@ -60,6 +60,15 @@ test("connector settings reject unsafe/missing configuration without disclosing 
   for (const port of ["0", "65536", "1.2", "bad"])
     assert.throws(() => connectorConfig({ ...env, PORT: port }));
 });
+test("desktop OAuth callbacks require an explicit boolean opt-in", () => {
+  assert.equal(connectorConfig(env).allowLoopbackClients, false);
+  assert.equal(
+    connectorConfig({ ...env, SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS: "1" }).allowLoopbackClients,
+    true,
+  );
+  for (const value of ["true", "yes", "2", ""])
+    assert.throws(() => connectorConfig({ ...env, SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS: value }));
+});
 test("encrypted repository authenticates files, writes atomically and survives restart", () => {
   const dir = mkdtempSync(join(tmpdir(), "connector-storage-"));
   const key = Buffer.alloc(32, 3);

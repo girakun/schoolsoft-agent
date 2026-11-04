@@ -101,6 +101,29 @@ test("callback allowlist rejects hostile origins, path variants and URL componen
   ])
     assert.equal(approvedRedirect(value), false, value);
 });
+test("desktop callbacks accept only explicit loopback listeners when enabled", () => {
+  for (const value of [
+    "http://127.0.0.1:43123/callback",
+    "http://localhost:43123/oauth/callback",
+    "http://[::1]:43123/callback",
+  ]) {
+    assert.equal(approvedRedirect(value), false);
+    assert.equal(approvedRedirect(value, true), true);
+  }
+  for (const value of [
+    "http://127.0.0.1/callback",
+    "http://192.168.1.2:43123/callback",
+    "http://127.0.0.1.evil.example:43123/callback",
+    "http://localhost.evil.example:43123/callback",
+    "https://localhost:43123/callback",
+    "http://user@127.0.0.1:43123/callback",
+    "http://:password@127.0.0.1:43123/callback",
+    "http://127.0.0.1:43123/callback?next=evil",
+    "http://127.0.0.1:43123/callback#evil",
+    "file:///callback",
+  ])
+    assert.equal(approvedRedirect(value, true), false, value);
+});
 test("the connector's own callbacks are accepted exactly, next to the vendor allowlist", async () => {
   const own = "https://parent.example/reference/";
   const provider = new ConnectorOAuthProvider({

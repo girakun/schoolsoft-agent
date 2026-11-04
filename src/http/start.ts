@@ -88,6 +88,7 @@ export function composeConnector(
     scopes: [...CONNECTOR_OPERATIONS],
     // The connector's own reference page is an OAuth client like any other UI.
     ownCallbacks: [config.publicUrl + PAGE_PATH],
+    allowLoopbackClients: config.allowLoopbackClients,
     repository: new EncryptedRepository<OAuthState>(
       config.stateDir,
       "oauth",
