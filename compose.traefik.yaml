@@ -1,0 +1,49 @@
+# Private Streamable HTTP MCP behind an existing Traefik file-provider route.
+# Copy .env.traefik.example to .env and generate two independent secrets.
+name: schoolsoft
+services:
+  connector:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    image: local/schoolsoft-agent:network
+    container_name: schoolsoft
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, KILL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1.0
+    environment:
+      TZ: Europe/Stockholm
+      PORT: "3000"
+      SCHOOLSOFT_PUBLIC_URL: ${SCHOOLSOFT_PUBLIC_URL:?Set the private HTTPS origin}
+      SCHOOLSOFT_SCHOOL: ${SCHOOLSOFT_SCHOOL:?Set the SchoolSoft tenant slug}
+      SCHOOLSOFT_LOGIN_MODE: ${SCHOOLSOFT_LOGIN_MODE:-browser}
+      SCHOOLSOFT_ADMIN_PASSWORD: ${SCHOOLSOFT_ADMIN_PASSWORD:?Generate an owner password}
+      SCHOOLSOFT_STORAGE_KEY: ${SCHOOLSOFT_STORAGE_KEY:?Generate a storage key}
+      SCHOOLSOFT_STATE_DIR: /data
+      SCHOOLSOFT_PROXY_HOPS: "1"
+      SCHOOLSOFT_KEEPALIVE: app
+      SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS: "1"
+      SCHOOLSOFT_LANG: sv
+    volumes:
+      - schoolsoft-state:/data
+    tmpfs:
+      - /tmp:mode=1777,noexec,nosuid,size=16m
+    networks:
+      proxy:
+        aliases: [schoolsoft-connector]
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+networks:
+  proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK:-reverse_proxy}
+volumes:
+  schoolsoft-state:
+    name: schoolsoft-state

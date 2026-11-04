@@ -13,10 +13,11 @@ const callback = "https://claude.ai/api/mcp/auth_callback";
 const verifier = "v".repeat(64);
 const challenge = createHash("sha256").update(verifier).digest("base64url");
 const allowedScopes = ["list_children", "get_schedule", "get_calendar", "get_lunch_menu"];
-async function fixture(t: TestContext, vendorCallback = callback) {
+async function fixture(t: TestContext, vendorCallback = callback, allowLoopbackClients = false) {
   let state: OAuthState | undefined;
   const oauth = new ConnectorOAuthProvider({
     resourceUrl: resource,
+    allowLoopbackClients,
     scopes: allowedScopes,
     repository: {
       read: () => state,
@@ -231,6 +232,21 @@ async function fixture(t: TestContext, vendorCallback = callback) {
     },
   };
 }
+test("desktop clients complete OAuth with PKCE and call MCP over HTTP", async (t) => {
+  const localCallback = "http://127.0.0.1:43123/callback";
+  const f = await fixture(t, localCallback, true);
+  const { client, code } = await f.connection(["list_children", "get_calendar"]);
+  const changed = await f.exchange(client.client_id, code, {
+    redirect_uri: "http://127.0.0.1:43124/callback",
+  });
+  assert.equal(changed.status, 400, "the registered port remains bound to the code");
+  const tokens = await (await f.exchange(client.client_id, code)).json();
+  const listed = await f.rpc(tokens.access_token, "tools/list");
+  assert.equal(listed.response.status, 200);
+  assert.equal(listed.data.result.tools.length, 2);
+  const closed = await fixture(t, localCallback);
+  assert.equal((await closed.register()).response.status, 400);
+});
 test("real HTTP OAuth discovery, DCR, consent, PKCE and scoped stateless MCP", async (t) => {
   const f = await fixture(t);
   for (const path of [

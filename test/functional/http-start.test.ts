@@ -64,6 +64,11 @@ test("production composition writes encrypted login and clears credentials witho
     assert.equal((await runtime.status()).authenticated, false);
     const { url } = await runtime.beginLogin();
     assert.equal(
+      new URLSearchParams(url.split("?")[1]).get("redirect_uri"),
+      env.SCHOOLSOFT_PUBLIC_URL + "/schoolsoft/callback",
+      "BankID returns to the connector, not the browser computer's localhost",
+    );
+    assert.equal(
       runtime.callback(new URLSearchParams(url.split("?")[1]).get("state")!, "synthetic-code"),
       true,
     );

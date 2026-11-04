@@ -35,7 +35,7 @@
   "author": "Jonas Grimfelt",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "commander": "^15.0.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
@@ -103,5 +103,11 @@
   "types": "./dist/core/index.d.ts",
   "optionalDependencies": {
     "playwright": "^1.63.0"
+  },
+  "overrides": {
+    "test-exclude": {
+      "glob": "^14.0.3",
+      "minimatch": "^11.0.4"
+    }
   }
 }

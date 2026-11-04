@@ -20,13 +20,15 @@ import { API_BASE } from "./routes.js";
 import { PACKAGE_VERSION } from "../shared/version.js";
 import { PAGE_PATH } from "./reference/app.js";
 import { referencePage } from "./reference/page.js";
+import { qrPage, type QrPageRuntime } from "./qr-page.js";
 export interface ServerOptions {
   config: ConnectorConfig;
   oauth: ConnectorOAuthProvider;
   runtime: Pick<
     ConnectorRuntime,
     "beginLogin" | "callback" | "status" | "execute" | "executeForChild" | "logout"
-  >;
+  > &
+    QrPageRuntime;
   sessions?: OwnerSessions;
   /** Operator-facing notices; never receives request data. Default: stderr. */
   warn?: (message: string) => void;
@@ -213,6 +215,10 @@ export function createConnectorApp({
   });
   app.post("/owner/schoolsoft/login", upstreamLoginLimit, async (_req, res) => {
     const { url } = await runtime.beginLogin();
+    if (config.loginMode === "qr") {
+      res.redirect("/owner/schoolsoft/qr");
+      return;
+    }
     res.send(
       page(
         "Complete BankID",
@@ -220,6 +226,7 @@ export function createConnectorApp({
       ),
     );
   });
+  app.use("/owner/schoolsoft", qrPage(runtime));
   // Unauthenticated by design (the portal redirects the parent's browser here), so bound
   // state guessing per caller. Separate from ownerAuthLimit: returning from BankID must
   // not spend the owner's login budget, and the reverse.
