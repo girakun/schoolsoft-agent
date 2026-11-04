@@ -276,7 +276,7 @@ export function createConnectorApp({
     res.send(
       page(
         "Choose what this app may read",
-        `<p>App name (provided by the app): ${esc(pending.clientName)}</p><p>Return address: ${esc(pending.redirectUri)}</p><p>Continue only if you started connecting this app yourself a moment ago. If the link to this page came from someone else, choose Cancel.</p><p>Select at least one child. ${pending.redirectUri === config.publicUrl + PAGE_PATH ? "The selected data will be shown in this browser on your connector's reference page; it is not sent to an AI provider." : "The selected data will be sent to your AI provider when you use these tools."}</p>${form("/owner/approve", res.locals.csrf, hidden("request", id) + children + scopes, "Allow selected access")}${form("/owner/deny", res.locals.csrf, hidden("request", id), "Cancel")}`,
+        `<p>App name (provided by the app): ${esc(pending.clientName)}</p><p>Return address: ${esc(pending.redirectUri)}</p><p>Continue only if you started connecting this app yourself a moment ago. If the link to this page came from someone else, choose Cancel.</p><p>Select at least one child. Inbox access is to the guardian's school inbox and may include messages about siblings at the same school. Contact lists may include other families' contact details. Grades, documents and attendance require a separate SchoolSoft web login on the connector.</p><p>${pending.redirectUri === config.publicUrl + PAGE_PATH ? "The selected data will be shown in this browser on your connector's reference page; it is not sent to an AI provider." : "The selected data will be sent to your AI provider when you use these tools."}</p>${form("/owner/approve", res.locals.csrf, hidden("request", id) + children + scopes, "Allow selected access")}${form("/owner/deny", res.locals.csrf, hidden("request", id), "Cancel")}`,
       ),
     );
   });
@@ -354,12 +354,17 @@ export function createConnectorApp({
       const auth = req.auth!;
       const grantId = String(auth.extra!.grantId);
       const server = new McpServer({ name: "schoolsoft-agent", version: PACKAGE_VERSION });
-      for (const op of operations.filter((candidate) => auth.scopes.includes(candidate.name)))
+      for (const op of operations.filter(
+        (candidate) => candidate.annotations.readOnly && auth.scopes.includes(candidate.name),
+      ))
         server.registerTool(
           "schoolsoft_" + op.name,
           {
             title: op.title,
-            description: op.description,
+            description:
+              op.name === "auth_status"
+                ? "Check the connector's SchoolSoft sign-in, pending login and portal status. Returns only children approved for this connection. Never starts a login. Use when: checking whether the owner needs to sign in."
+                : op.description,
             inputSchema: op.input,
             annotations: {
               readOnlyHint: true,

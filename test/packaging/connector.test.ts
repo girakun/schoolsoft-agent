@@ -44,6 +44,11 @@ test("connector image uses reproducible installation, minimal runtime and a nonr
   const docker = read("Dockerfile.connector");
   assert.match(docker, /npm ci --ignore-scripts/);
   assert.match(docker, /npm prune --omit=dev --omit=optional --ignore-scripts/);
+  assert.match(docker, /node node_modules\/playwright\/cli.js install --with-deps chromium/);
+  assert.match(docker, /COPY --from=build .*node_modules\/playwright-core/);
+  assert.match(docker, /COPY --from=production .*node_modules/);
+  assert.doesNotMatch(docker, /npx playwright/);
+  assert.match(docker, /PLAYWRIGHT_BROWSERS_PATH=\/opt\/playwright/);
   assert.match(read("deploy/connector-entrypoint.mjs"), /process\.setuid\(1000\)/);
   assert.match(docker, /chmod 700 \/data/);
   assert.match(docker, /CMD \["node", "deploy\/connector-entrypoint.mjs"\]/);

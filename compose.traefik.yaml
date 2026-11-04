@@ -13,7 +13,7 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, SETUID, SETGID, KILL]
     security_opt: [no-new-privileges:true]
-    mem_limit: 512m
+    mem_limit: 1g
     cpus: 1.0
     environment:
       TZ: Europe/Stockholm
@@ -31,7 +31,7 @@ services:
     volumes:
       - schoolsoft-state:/data
     tmpfs:
-      - /tmp:mode=1777,noexec,nosuid,size=16m
+      - /tmp:mode=1777,noexec,nosuid,size=256m
     networks:
       proxy:
         aliases: [schoolsoft-connector]

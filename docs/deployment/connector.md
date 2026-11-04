@@ -49,7 +49,38 @@ The connector therefore does not mean that only you can ever see the information
 What the server saves, for how long, and what each AI app can read is listed in
 [how your family's data is handled](../getting-started/data-handling.md#what-is-saved-on-your-connector-server).
 
-The available tools are children, schedule, calendar and lunch.
+The network MCP exposes all 22 read-only operations from the operation registry:
+
+| Area                               | Operations (each has the `schoolsoft_` tool prefix)                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| School and sign-in status          | `find_school`, `auth_status`, `list_children`                                                                                              |
+| School day                         | `get_schedule`, `get_calendar`, `get_lunch_menu`                                                                                           |
+| School communications              | `get_news`, `get_messages`, `get_message`, `get_activity_log`                                                                              |
+| Learning                           | `get_assignments`, `get_assignment_detail`, `get_subject_rooms`                                                                            |
+| Class resources (headless browser) | `get_contacts`, `get_bookings`, `get_files`                                                                                                |
+| Separate web login required        | `get_grades`, `get_student_documents`, `get_unreported_absence`, `get_attendance_report`, `get_assessment_criteria`, `get_grade_prognosis` |
+
+`login`, `logout` and `report_absence` are never offered as network tools or OAuth
+scopes, even if the server's local write setting is enabled. The owner console
+continues to manage sign-in and disconnection. Read operations may maintain the
+session, select a child, or use SchoolSoft's list-query POST; they do not submit,
+send or delete school data. The browser blocks mutating page requests.
+
+Each tool is a separate OAuth scope. After updating, reconnect the MCP client and
+approve the additional reads and children you want. Existing grants and refresh
+tokens retain their original scopes; an update never grants additional access.
+The guardian's message inbox is scoped to the school, not an individual child,
+and can contain messages about siblings at that school. Contact lists can include
+other families' details. Select these permissions accordingly.
+
+The connector image includes Playwright and Chromium for browser-backed reads.
+GDPR-gated reads still require a valid separate web-login session in the same
+account store. This release does not add remote web login or session import;
+without that session these tools return the existing web-login-required error
+before navigating. App BankID alone does not unlock them. `auth_status` reports
+only approved children, and never starts a login. The four existing typed REST
+routes and reference-page contract remain unchanged; the additional operations
+are exposed through MCP.
 
 Calendar access is a separate permission named `get_calendar`. After updating
 an existing connector, disconnect and reconnect it in your AI app, then approve

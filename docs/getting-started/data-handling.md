@@ -2,7 +2,7 @@
 
 This page explains, in plain language, what schoolsoft-agent saves, where it saves it, how long it keeps it, and who receives your children's school information. Read it before you connect an account.
 
-It describes the code as of version 0.3.0 (September 2026). It covers all three ways to use the project:
+It describes version 0.3.0 and the fork's read-only network tools update of 4 November 2026. It covers all three ways to use the project:
 
 - **On your own computer:** the command line (`schoolsoft-agent`), the MCP server that assistants such as Claude Desktop, Claude Code or OpenCode start (`schoolsoft-agent-mcp`), and the Claude Desktop extension, which runs that MCP server.
 - **On your own server:** the [parent-hosted connector](../deployment/connector.md) (`schoolsoft-agent-http`) that Claude or ChatGPT reaches over the internet.
@@ -79,7 +79,7 @@ The connector keeps its files in its data folder (`/data` unless `SCHOOLSOFT_STA
 
 The `.enc` files are encrypted with AES-256-GCM using your **storage key** (`SCHOOLSOFT_STORAGE_KEY`). The key is kept in your hosting account's settings, not on the disk. A copy of the disk without the key cannot be read. The connector serves one guardian and one school. Its session and history files use the same per-school layout as on a computer.
 
-The connector does not use `config.json`, `schools.json`, `key.bin` or a login note: it keeps a SchoolSoft login that is running in memory.
+The connector does not use `config.json`, `key.bin` or a login note: it keeps a SchoolSoft login that is running in memory. Calling `find_school` caches the public school directory in `schools.json` on the connector's disk, under the same private file permissions. It contains school names and identifiers, not your family's data.
 
 ## What is only kept in memory
 
@@ -148,9 +148,13 @@ With the command line, the same answers are printed as text. They reach an AI pr
 
 ### Through the connector
 
-The connector offers only four tools: `list_children`, `get_schedule`, `get_calendar` and `get_lunch_menu`. When you connect an AI app, the approval page on your own server asks which children and which of these tools that app may use. The app can read only those. `list_children` shows the app each approved child's first name and student number, nothing more. Removing one app's approval does not affect another app.
+The connector offers all 22 read-only tools, including school news, message summaries and full message text, assignments, class contacts, shared files, and the reads that require a separate web login. The full list and prerequisites are in the [connector guide](../deployment/connector.md). It never offers `login`, `logout` or `report_absence` as network tools.
 
-The connector also has a read-only JSON interface (`/api/v1`) for your own dashboard. It uses the same approvals, children and tools. Today only Claude and ChatGPT can be approved.
+When you connect an AI app, the approval page on your own server asks which children and which tools that app may use. The app can read only those. Existing approvals do not gain new permissions after an update; reconnect and explicitly select the additional reads. `list_children` shows the app each approved child's first name and student number, nothing more. Network `auth_status` also filters its child list to the approval. Removing one app's approval does not affect another app.
+
+Message access is to the guardian's inbox at the selected child's school. It can include messages about siblings at that school. Class contacts can include other families' personal details. Those permissions are separate choices on the approval page. Grades, student documents, assessment and attendance remain behind SchoolSoft's separate web-session gate; the connector does not automate or bypass that login.
+
+The connector also has a read-only JSON interface (`/api/v1`) for your own dashboard. It keeps the four typed child, schedule, calendar and lunch routes, using the same OAuth tokens and approvals. The additional read tools are available through MCP. Desktop clients can use explicitly enabled loopback callbacks as described in the deployment guide.
 
 ### What never reaches the assistant
 

@@ -5,16 +5,24 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build && npm prune --omit=dev --omit=optional --ignore-scripts
+RUN npm run build
+
+FROM build AS production
+RUN npm prune --omit=dev --omit=optional --ignore-scripts
 
 FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS runtime
-ENV NODE_ENV=production PORT=3000 SCHOOLSOFT_STATE_DIR=/data
+ENV NODE_ENV=production PORT=3000 SCHOOLSOFT_STATE_DIR=/data PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
 COPY deploy/connector-entrypoint.mjs ./deploy/connector-entrypoint.mjs
 COPY --from=build --chown=node:node /app/package.json ./
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=production --chown=node:node /app/node_modules ./node_modules
+# Playwright is optional locally and also a dev dependency, so npm prune removes it.
+# The connector needs the exact lockfile versions, never an npx-installed replacement.
+COPY --from=build --chown=node:node /app/node_modules/playwright ./node_modules/playwright
+COPY --from=build --chown=node:node /app/node_modules/playwright-core ./node_modules/playwright-core
 COPY --from=build --chown=node:node /app/dist ./dist
+RUN node node_modules/playwright/cli.js install --with-deps chromium && chmod -R a+rX /opt/playwright
 RUN mkdir -p /data && chown node:node /data && chmod 700 /data
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

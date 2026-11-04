@@ -46,6 +46,11 @@ export function normalizeSubject(s: string): string {
 export class BrowserPortal implements BrowserPortalPart {
   constructor(private readonly o: BrowserPortalOptions) {}
 
+  private requireWeb(capability: string): void {
+    if (this.o.hasWebSession && !this.o.hasWebSession())
+      throw new WebLoginRequiredError(capability);
+  }
+
   /** Visit one page and run its extractor; gated pages get the web cookies after the child sync. */
   private async visit<T>(
     capability: string,
@@ -53,8 +58,7 @@ export class BrowserPortal implements BrowserPortalPart {
     run: (page: PortalPage) => Promise<T>,
   ): Promise<T> {
     if (spec.web) {
-      if (this.o.hasWebSession && !this.o.hasWebSession())
-        throw new WebLoginRequiredError(capability);
+      this.requireWeb(capability);
       await this.o.syncWebChild?.();
     }
     return this.o.session.withPage(run, { web: spec.web });
@@ -108,6 +112,7 @@ export class BrowserPortal implements BrowserPortalPart {
    */
   async getAssessmentCriteria(subject: string, schoolType = 7): Promise<TablePage> {
     const spec = PAGES.assessmentCriteria;
+    this.requireWeb("getAssessmentCriteria");
     const wanted = normalizeSubject(subject);
     // The JSP subject menu only renders under the app session (the web
     // session shows SchoolSoft's React sidebar), so resolve the id there.

@@ -34,9 +34,14 @@ Two backends serve the data afterwards. The **Eva API** takes the Bearer token a
 
 `src/http/` implements a separate Streamable HTTP MCP adapter for a server operated
 by one guardian. It imports core through `core/index.ts`; it does not wrap the local
-MCP server or CLI. The initial allowlist contains `list_children`, `get_schedule`
-and `get_lunch_menu`. Tool definitions come from the operation registry; the runtime
-serializes each complete authorization, child-focus and read sequence.
+MCP server or CLI. Its tool and OAuth scope list is derived from every operation
+whose annotations declare it read-only (currently 22). Mutations, login and logout
+are excluded both at discovery and execution. Tool definitions come from the operation registry; the runtime
+serializes each complete authorization, child-focus and read sequence. School lookup
+runs without a guardian session; status uses a consent-filtered projection of the
+owner status and remains available during login. Browser reads use the same host
+authorization checks before navigation and extraction and retain the separate web
+session gate. The typed REST surface keeps its existing four-operation contract.
 
 A parent signs into the owner page using their deployment secret and starts
 SchoolSoft login there. The provider accepts an injected browser-authorization

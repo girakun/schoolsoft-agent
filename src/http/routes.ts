@@ -5,7 +5,13 @@
  */
 import { z } from "zod";
 import { InputError, describeIssues, operations, type Operation } from "../core/index.js";
-import { CONNECTOR_OPERATIONS } from "./runtime.js";
+/** REST retains its existing typed contract; MCP exposes all read-only operations. */
+export const REST_OPERATIONS = [
+  "list_children",
+  "get_schedule",
+  "get_calendar",
+  "get_lunch_menu",
+] as const;
 
 export const API_BASE = "/api/v1";
 /** The path segment that names a child; its value is the id `list_children` returns. */
@@ -67,7 +73,7 @@ export function queryShape(input: z.ZodRawShape): QueryShape {
  */
 export function restRoutes(
   registry: readonly Operation[] = operations,
-  offered: readonly string[] = CONNECTOR_OPERATIONS,
+  offered: readonly string[] = REST_OPERATIONS,
 ): RestRoute[] {
   return registry
     .filter((operation) => offered.includes(operation.name))
