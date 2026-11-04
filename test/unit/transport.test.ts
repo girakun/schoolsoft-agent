@@ -48,3 +48,24 @@ test("redirect is explicit on every request: reads follow, the write does not", 
     },
   ]);
 });
+
+test("read query POST and web child focus recheck host consent before sending", async () => {
+  let sent = 0;
+  let allowed = true;
+  const http = new SchoolsoftHttp(
+    "taby",
+    async () => {
+      sent++;
+      return { status: 200, data: [] };
+    },
+    () => {
+      if (!allowed) throw new Error("revoked");
+    },
+  );
+  await http.postJson("/rest/list", "cookie", {});
+  await http.put("/rest-api/focus", "cookie");
+  allowed = false;
+  await assert.rejects(http.postJson("/rest/list", "cookie", {}), /revoked/);
+  await assert.rejects(http.put("/rest-api/focus", "cookie"), /revoked/);
+  assert.equal(sent, 2);
+});

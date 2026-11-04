@@ -474,3 +474,33 @@ test("every navigation is one request of the budget; its status and Retry-After 
     (e) => e instanceof PortalPushbackError && e.sent,
   );
 });
+
+test("host consent is checked when a queued browser navigation dispatches and before extraction", async () => {
+  const state = fresh();
+  let allowed = true;
+  let checks = 0;
+  const controller = new AbortController();
+  const session = new PlaywrightSession({
+    budget: new CountingBudget(),
+    school: "taby",
+    cookieHeader: () => "JSESSIONID=a",
+    loader: async () => fakePlaywright(state),
+    signal: controller.signal,
+    beforeRead: () => {
+      checks++;
+      if (!allowed) throw new Error("revoked");
+    },
+  });
+  await session.withPage(async (page) => {
+    await page.goto("/test");
+    assert.equal(await page.evaluate(() => 42), 42);
+    assert.deepEqual(await page.waitForJson(/schoolsoft/), { ok: true });
+    allowed = false;
+    await assert.rejects(page.goto("/forbidden"), /revoked/);
+    await assert.rejects(async () => page.evaluate(() => 43), /revoked/);
+    await assert.rejects(page.waitForJson(/schoolsoft/), /revoked/);
+  });
+  assert.equal(checks, 6);
+  assert.equal(state.landing, "https://sms.schoolsoft.se/taby/test");
+  assert.equal(state.closedBrowsers, 1);
+});

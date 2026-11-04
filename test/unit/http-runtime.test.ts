@@ -1,15 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConnectorRuntime, type ConnectorRuntimeOptions } from "../../src/http/runtime.js";
+import {
+  CONNECTOR_OPERATIONS,
+  ConnectorRuntime,
+  type ConnectorRuntimeOptions,
+} from "../../src/http/runtime.js";
 import {
   MemorySessionStore,
   MemoryPendingLoginStore,
   MemorySessionHistoryStore,
   resolveConfig,
+  operations,
+  type PlaywrightLike,
 } from "../../src/core/index.js";
 import { FakeTimer } from "../helpers/fake-timer.js";
 import { CountingBudget } from "../helpers/budget.js";
@@ -246,7 +252,8 @@ test("remote login state is exact, one-use, private; metadata and reads honor ch
       ],
     },
   );
-  await assert.rejects(f.runtime.execute("get_messages", {}, [100]), /not available/);
+  await assert.rejects(f.runtime.execute("login", {}, [100]), /not available/);
+  await assert.rejects(f.runtime.execute("logout", {}, [100]), /not available/);
   await assert.rejects(
     f.runtime.execute("report_absence", { child_id: 100, confirm: true }, [100]),
     /not available/,
@@ -930,4 +937,266 @@ test("drift: a drifted guardian profile fails the login and never reaches the co
   assert.equal(status.loginError, "upstream");
   assert.equal(f.identity(), undefined, "no guardian identity was pinned from a drifted profile");
   await f.runtime.close();
+});
+
+test("network operations contain every read and never a mutation, even when writes are enabled", async () => {
+  assert.equal(CONNECTOR_OPERATIONS.length, 22);
+  assert.deepEqual(
+    CONNECTOR_OPERATIONS,
+    operations.filter((op) => op.annotations.readOnly).map((op) => op.name),
+  );
+  const f = fixture();
+  f.runtimeOptions.config.allowWrites = true;
+  for (const operation of operations.filter((candidate) => !candidate.annotations.readOnly))
+    await assert.rejects(
+      f.runtime.execute(operation.name, {}, [100]),
+      /not available/,
+      operation.name,
+    );
+  await assert.rejects(f.runtime.execute("unknown", {}, [100]), /not available/);
+  await f.runtime.close();
+});
+
+test("network status is available before and during login and exposes only approved children", async () => {
+  const f = fixture();
+  assert.equal(
+    ((await f.runtime.execute("auth_status", {}, [100])) as { authenticated: boolean })
+      .authenticated,
+    false,
+  );
+  const { url } = await f.runtime.beginLogin();
+  assert.equal(
+    ((await f.runtime.execute("auth_status", {}, [100])) as { loginInProgress: boolean })
+      .loginInProgress,
+    true,
+  );
+  const state = new URLSearchParams(url.split("?")[1]).get("state")!;
+  f.runtime.callback(state, "CODE");
+  await f.runtime.execute("list_children", {}, [100, 101]);
+  const status = (await f.runtime.execute("auth_status", {}, [101])) as {
+    children: unknown[];
+    authenticated: boolean;
+  };
+  assert.equal(status.authenticated, true);
+  assert.deepEqual(status.children, [{ id: 101, name: "Child 101" }]);
+  await assert.rejects(f.runtime.execute("auth_status", { extra: true }, [100]), /arguments/);
+  await assert.rejects(
+    f.runtime.execute("auth_status", {}, [100], {
+      check: () => {
+        throw new Error("revoked");
+      },
+    }),
+    /revoked/,
+  );
+  await assert.rejects(
+    f.runtime.execute("auth_status", {}, [100], {
+      check: (() => {
+        let calls = 0;
+        return () => {
+          if (++calls > 1) throw new Error("revoked after status");
+        };
+      })(),
+    }),
+    /revoked after status/,
+  );
+  await f.runtime.close();
+});
+
+test("network school search uses the core operation without requiring a SchoolSoft login", async () => {
+  const f = fixture();
+  const configDir = mkdtempSync(join(tmpdir(), "connector-directory-"));
+  f.runtimeOptions.config.configDir = configDir;
+  writeFileSync(
+    join(configDir, "schools.json"),
+    JSON.stringify({
+      fetchedAt: Date.now(),
+      schools: [{ name: "Synthetic School", slug: "synthetic", orgId: 1 }],
+    }),
+  );
+  try {
+    const result = (await f.runtime.execute("find_school", { query: "Synthetic" }, [])) as {
+      schools: unknown[];
+    };
+    assert.equal(result.schools.length, 1);
+    assert.equal(f.store.load(), null);
+    let checks = 0;
+    await assert.rejects(
+      f.runtime.execute("find_school", { query: "Synthetic" }, [], {
+        check: () => {
+          if (++checks > 1) throw new Error("revoked");
+        },
+      }),
+      /revoked/,
+    );
+  } finally {
+    rmSync(configDir, { recursive: true, force: true });
+    await f.runtime.close();
+  }
+});
+
+test("network news and full messages use the authorized child's school and recheck consent", async () => {
+  const f = fixture();
+  await login(f.runtime);
+  f.override((url) =>
+    url.endsWith("/messages/inbox")
+      ? [
+          {
+            id: 5,
+            subject: "Synthetic",
+            message: "Preview",
+            isRead: false,
+            date: "2026-11-04T12:00:00+01:00",
+            hasFiles: false,
+          },
+        ]
+      : url.includes("/messages/")
+        ? { id: 5, subject: "Synthetic", message: "Full body" }
+        : url.includes("/news?")
+          ? [{ title: "Synthetic news", description: "School update" }]
+          : undefined,
+  );
+  assert.deepEqual(await f.runtime.execute("get_message", { child_id: 101, id: 5 }, [101]), {
+    message: { id: 5, subject: "Synthetic", message: "Full body" },
+  });
+  const inbox = (await f.runtime.execute(
+    "get_messages",
+    { child_id: 101, limit: 1, unread_only: true },
+    [101],
+  )) as { messages: { id: number }[] };
+  assert.equal(inbox.messages[0].id, 5);
+  const news = (await f.runtime.execute("get_news", { child_id: 101 }, [101])) as {
+    news: unknown[];
+  };
+  assert.equal(news.news.length, 1);
+  await assert.rejects(
+    f.runtime.execute("get_message", { child_id: 100, id: 5 }, [101]),
+    /not permitted/,
+  );
+  await f.runtime.close();
+});
+
+test("all browser network reads use the focused child's cookies, respect web login and close browsers", async () => {
+  const f = fixture();
+  await login(f.runtime);
+  const visited: string[] = [];
+  const cookies: { name: string; value: string }[][] = [];
+  let closed = 0;
+  let onNavigate = () => {};
+  const extracted: Record<string, unknown> = {
+    extractContacts: [{ title: "Class", people: [] }],
+    extractBookings: [{ title: "Meeting", slots: [] }],
+    extractFiles: [{ name: "Newsletter", url: "https://school.example/file", type: "file" }],
+    extractTablePage: { title: "Synthetic", sections: [] },
+    extractSubjectLinks: [{ subject: "Matematik", subjectId: 1 }],
+  };
+  f.runtimeOptions.deps!.playwrightLoader = async () =>
+    ({
+      chromium: {
+        launch: async () => ({
+          newContext: async () => {
+            let current = "";
+            return {
+              addCookies: async (values: { name: string; value: string }[]) => {
+                cookies.push(values);
+              },
+              newPage: async () => ({
+                addInitScript: async () => {},
+                route: async () => {},
+                goto: async (url: string) => {
+                  current = url;
+                  visited.push(url);
+                  onNavigate();
+                  return null;
+                },
+                url: () => current,
+                evaluate: async (fn: Function) => extracted[fn.name],
+              }),
+              close: async () => {},
+            };
+          },
+          close: async () => {
+            closed++;
+          },
+        }),
+      },
+    }) as unknown as PlaywrightLike;
+  f.override((url) =>
+    url.includes("/header/parent") ? { currentChildId: 101, currentOrgId: 20 } : undefined,
+  );
+  try {
+    for (const name of ["get_contacts", "get_bookings", "get_files"]) {
+      const result = (await f.runtime.execute(name, { child_id: 101 }, [101])) as {
+        child: { studentId: number };
+      };
+      assert.equal(result.child.studentId, 101);
+      assert.equal(cookies.at(-1)!.find((cookie) => cookie.name === "JSESSIONID")!.value, "101");
+    }
+    const gated = [
+      "get_grades",
+      "get_student_documents",
+      "get_unreported_absence",
+      "get_attendance_report",
+      "get_assessment_criteria",
+    ];
+    const before = visited.length;
+    for (const name of gated)
+      await assert.rejects(
+        f.runtime.execute(
+          name,
+          {
+            child_id: 101,
+            ...(name === "get_assessment_criteria" ? { subject: "Matematik" } : {}),
+          },
+          [101],
+        ),
+        /web login/i,
+      );
+    assert.equal(visited.length, before, "all gated reads refuse before any navigation");
+    assert.equal(closed, visited.length);
+    const saved = f.store.load()!;
+    saved.web = {
+      cookies: [{ name: "JSESSIONID", value: "web-only", domain: "sms.schoolsoft.se", path: "/" }],
+      savedAt: Date.now(),
+      landedOn: "https://sms.schoolsoft.se/taby/jsp/student/right_student_start.jsp",
+    };
+    f.store.save(saved);
+    const restored = new ConnectorRuntime(f.runtimeOptions);
+    try {
+      for (const name of gated) {
+        await restored.execute(
+          name,
+          {
+            child_id: 101,
+            ...(name === "get_assessment_criteria" ? { subject: "Matematik" } : {}),
+          },
+          [101],
+        );
+        assert.equal(
+          cookies.at(-1)!.find((cookie) => cookie.name === "JSESSIONID")!.value,
+          "web-only",
+        );
+      }
+      let allowed = true;
+      onNavigate = () => {
+        allowed = false;
+      };
+      await assert.rejects(
+        restored.execute("get_contacts", { child_id: 101, fresh: true }, [101], {
+          check: () => {
+            if (!allowed) throw new Error("revoked");
+          },
+        }),
+        /revoked/,
+      );
+      assert.equal(closed, visited.length, "even a revoked read closes its browser");
+    } finally {
+      await restored.close();
+    }
+    await assert.rejects(
+      f.runtime.execute("get_contacts", { child_id: 100 }, [101]),
+      /not permitted/,
+    );
+  } finally {
+    await f.runtime.close();
+  }
 });

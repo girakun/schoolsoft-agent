@@ -38,6 +38,9 @@ export interface PlaywrightSessionOptions {
   engine?: BrowserEngine;
   loader?: PlaywrightLoader;
   origin?: string;
+  /** Host authorization, checked before every navigation and extraction. */
+  beforeRead?: () => void;
+  signal?: AbortSignal;
 }
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -126,8 +129,11 @@ export class PlaywrightSession implements BrowserSession {
     return {
       goto: async (path: string) => {
         await this.o.budget.run(
-          {},
-          () => page.goto(base + path, { waitUntil: "load", timeout: 30_000 }),
+          { signal: this.o.signal },
+          () => {
+            this.o.beforeRead?.();
+            return page.goto(base + path, { waitUntil: "load", timeout: 30_000 });
+          },
           (response) => ({
             status: response?.status() ?? 200,
             retryAfter: response?.headers()["retry-after"] ?? null,
@@ -138,10 +144,13 @@ export class PlaywrightSession implements BrowserSession {
           throw new SessionLostError(path, Boolean(web?.length));
         if (/right_student_app_blocked\.jsp/.test(landed)) throw new PortalGatedError(path);
       },
-      evaluate: <T, A>(fn: (arg: A) => T, arg?: A) =>
-        page.evaluate(fn as never, arg as never) as Promise<T>,
+      evaluate: <T, A>(fn: (arg: A) => T, arg?: A) => {
+        this.o.beforeRead?.();
+        return page.evaluate(fn as never, arg as never) as Promise<T>;
+      },
       url: () => page.url(),
       waitForJson: async <T>(urlPattern: RegExp, timeoutMs = 30_000) => {
+        this.o.beforeRead?.();
         const res = await page.waitForResponse((r) => urlPattern.test(r.url()), {
           timeout: timeoutMs,
         });

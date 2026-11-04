@@ -22,7 +22,7 @@ services:
     volumes:
       - schoolsoft-state:/data
     tmpfs:
-      - /tmp:mode=1777,noexec,nosuid,size=16m
+      - /tmp:mode=1777,noexec,nosuid,size=256m
   https:
     image: caddy:2-alpine
     restart: unless-stopped

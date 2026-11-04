@@ -78,6 +78,7 @@ export class SchoolsoftHttp {
     body: unknown,
     extra: { redirect: "manual"; write: true } | { redirect: "follow" } = { redirect: "follow" },
   ) {
+    if (!("write" in extra)) this.beforeRead?.();
     return guardNetwork(() =>
       this.fetchImpl(
         portalUrl(this.school, path),
@@ -105,6 +106,7 @@ export class SchoolsoftHttp {
    * It follows redirects as it always has.
    */
   async put(path: string, cookie: string): Promise<number> {
+    this.beforeRead?.();
     const r = await guardNetwork(() =>
       this.fetchImpl(
         portalUrl(this.school, path),

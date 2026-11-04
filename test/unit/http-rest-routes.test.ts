@@ -20,8 +20,15 @@ import {
   type Operation,
 } from "../../src/core/index.js";
 import { ResponseDriftError } from "../../src/core/errors/index.js";
-import { CONNECTOR_OPERATIONS, ConnectorRefusedError } from "../../src/http/runtime.js";
-import { API_BASE, parseChildId, parseQuery, restRoutes, slug } from "../../src/http/routes.js";
+import { ConnectorRefusedError } from "../../src/http/runtime.js";
+import {
+  API_BASE,
+  REST_OPERATIONS,
+  parseChildId,
+  parseQuery,
+  restRoutes,
+  slug,
+} from "../../src/http/routes.js";
 import {
   PROBLEMS,
   PROBLEM_TYPE_PREFIX,
@@ -38,7 +45,7 @@ test("routes are generated from the registry: one per connector operation, in re
   const routes = restRoutes();
   assert.deepEqual(
     routes.map((r) => r.operation.name),
-    operations.map((o) => o.name).filter((n) => CONNECTOR_OPERATIONS.some((c) => c === n)),
+    operations.map((o) => o.name).filter((n) => REST_OPERATIONS.some((c) => c === n)),
   );
   assert.deepEqual(
     routes.map((r) => r.path),

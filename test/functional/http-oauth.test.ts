@@ -5,6 +5,7 @@ import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createConnectorApp } from "../../src/http/server.js";
 import { ConnectorOAuthProvider, type OAuthState } from "../../src/http/oauth.js";
+import { CONNECTOR_OPERATIONS } from "../../src/http/runtime.js";
 import type { ConnectorConfig } from "../../src/http/config.js";
 
 const origin = "https://connector.example";
@@ -12,7 +13,7 @@ const resource = origin + "/mcp";
 const callback = "https://claude.ai/api/mcp/auth_callback";
 const verifier = "v".repeat(64);
 const challenge = createHash("sha256").update(verifier).digest("base64url");
-const allowedScopes = ["list_children", "get_schedule", "get_calendar", "get_lunch_menu"];
+const allowedScopes = [...CONNECTOR_OPERATIONS];
 async function fixture(t: TestContext, vendorCallback = callback, allowLoopbackClients = false) {
   let state: OAuthState | undefined;
   const oauth = new ConnectorOAuthProvider({
@@ -303,7 +304,7 @@ test("real HTTP OAuth discovery, DCR, consent, PKCE and scoped stateless MCP", a
   });
   assert.deepEqual(f.executions[0].children, [1]);
   const excluded = await f.rpc(tokens.access_token, "tools/call", {
-    name: "schoolsoft_get_messages",
+    name: "schoolsoft_report_absence",
     arguments: {},
   });
   assert.ok(excluded.data.error || excluded.data.result?.isError);
@@ -541,4 +542,42 @@ test("replaying an authorization code over HTTP withdraws the access and refresh
   });
   assert.equal(refresh.status, 400);
   assert.equal((await f.rpc(others.access_token, "tools/list")).response.status, 200);
+});
+
+test("all read tools are callable over HTTP after consent; writes are neither scopes nor tools", async (t) => {
+  const f = await fixture(t);
+  const { client, code } = await f.connection();
+  const tokens = await (await f.exchange(client.client_id, code)).json();
+  const listed = await f.rpc(tokens.access_token, "tools/list");
+  assert.equal(listed.data.result.tools.length, 22);
+  for (const tool of listed.data.result.tools) {
+    assert.equal(tool.annotations.readOnlyHint, true);
+    assert.equal(tool.annotations.destructiveHint, false);
+    const result = await f.rpc(tokens.access_token, "tools/call", {
+      name: tool.name,
+      arguments:
+        tool.name === "schoolsoft_find_school"
+          ? { query: "Synthetic" }
+          : ["schoolsoft_get_message", "schoolsoft_get_assignment_detail"].includes(tool.name)
+            ? { id: 1 }
+            : tool.name === "schoolsoft_get_assessment_criteria"
+              ? { subject: "Matematik" }
+              : {},
+    });
+    assert.notEqual(result.data.result?.isError, true, tool.name);
+    assert.equal(result.data.error, undefined, tool.name);
+  }
+  for (const operation of ["login", "logout", "report_absence"]) {
+    const denied = await f.authorize(client.client_id, { scope: operation });
+    assert.equal(
+      new URL(denied.headers.get("location")!).searchParams.get("error"),
+      "invalid_scope",
+    );
+    const called = await f.rpc(tokens.access_token, "tools/call", {
+      name: "schoolsoft_" + operation,
+      arguments: {},
+    });
+    assert.ok(called.data.result?.isError || called.data.error, operation);
+  }
+  assert.equal(f.executions.length, 22);
 });

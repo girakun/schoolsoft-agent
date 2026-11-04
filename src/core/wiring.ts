@@ -237,7 +237,7 @@ export interface Portals {
 /** The browser session bound to the manager's live cookies (app) and its web-login cookies (gated pages). */
 export function createBrowserSession(
   manager: SessionManager,
-  deps: Pick<PortalDeps, "engine" | "playwrightLoader"> = {},
+  deps: Pick<PortalDeps, "engine" | "playwrightLoader" | "beforeRead" | "signal"> = {},
 ): PlaywrightSession {
   const provider = getProvider(manager.providerId);
   const session = manager.getSession();
@@ -249,6 +249,8 @@ export function createBrowserSession(
     webCookies: () => manager.getWebSession()?.cookies ?? null,
     engine: deps.engine,
     loader: deps.playwrightLoader,
+    beforeRead: deps.beforeRead,
+    signal: deps.signal,
   });
 }
 

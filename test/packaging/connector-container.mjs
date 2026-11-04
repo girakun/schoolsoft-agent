@@ -15,6 +15,8 @@ const common = [
   "--network",
   "none",
   "--read-only",
+  "--tmpfs",
+  "/tmp:mode=1777,noexec,nosuid,size=256m",
   "--cap-drop",
   "ALL",
   "--cap-add",
@@ -74,6 +76,18 @@ try {
   `),
     "unprivileged",
   );
+  assert.equal(
+    node(`
+      import { chromium } from 'playwright';
+      const browser = await chromium.launch({headless:true});
+      try {
+        const page = await browser.newPage();
+        await page.setContent('<p id="fixture">synthetic browser read</p>');
+        console.log(await page.locator('#fixture').textContent());
+      } finally { await browser.close(); }
+    `),
+    "synthetic browser read",
+  );
   const repo =
     "import {EncryptedRepository} from './dist/http/storage.js'; const r=new EncryptedRepository('/data','smoke',Buffer.from('ab'.repeat(32),'hex'),{migrations:[(d)=>d]});";
   assert.equal(node(repo + "r.write({fixture:true});console.log(r.read().fixture)"), "true");
@@ -90,7 +104,7 @@ try {
   // Invalid mount configuration fails before importing HTTP or touching another path.
   assert.throws(() => docker("run", "--rm", ...common, "-e", "SCHOOLSOFT_STATE_DIR=/tmp", image));
   console.log(
-    "Container smoke passed: fresh root-owned disk, uid 1000, no runtime capabilities, encrypted persistence, restart and clean stop; no network.",
+    "Container smoke passed: fresh root-owned disk, uid 1000, no runtime capabilities, headless Chromium, encrypted persistence, restart and clean stop; no network.",
   );
 } finally {
   try {

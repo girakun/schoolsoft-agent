@@ -11,6 +11,7 @@ import {
   runOperation,
   resolveProvider,
   getOperation,
+  operations,
   portalHealth,
   requestBudgetOf,
   type Config,
@@ -27,12 +28,10 @@ import {
 } from "../core/index.js";
 import { QrLoginSession } from "./qr-session.js";
 
-export const CONNECTOR_OPERATIONS = [
-  "list_children",
-  "get_schedule",
-  "get_calendar",
-  "get_lunch_menu",
-] as const;
+/** Only read operations can become network tools or OAuth scopes, including future additions. */
+export const CONNECTOR_OPERATIONS: readonly string[] = operations
+  .filter((operation) => operation.annotations.readOnly)
+  .map((operation) => operation.name);
 export interface ConnectorRuntimeOptions {
   config: Config;
   store: SessionStore;
@@ -296,14 +295,44 @@ export class ConnectorRuntime {
     });
   }
 
-  execute(
+  async execute(
     name: string,
     args: Record<string, unknown>,
     allowedChildIds: readonly number[],
     authorization: ExecutionAuthorization = {},
   ): Promise<unknown> {
+    // Status must remain usable while a human completes the connector's pending login.
+    if (name === "auth_status") {
+      this.parse(name, args);
+      const check = this.checker(authorization);
+      check();
+      return this.status().then((status) => {
+        check();
+        return {
+          ...status,
+          school: this.options.config.school,
+          children: status.children.filter((child) => allowedChildIds.includes(child.id)),
+        };
+      });
+    }
     return this.admitted(authorization, async (check) => {
       const { operation, input } = this.parse(name, args);
+      if (name === "find_school") {
+        // This operation declares no portal capabilities and needs no guardian session.
+        const result = await runOperation(
+          operation as Operation<z.ZodRawShape, unknown, never>,
+          {
+            config: this.options.config,
+            manager: this.manager,
+            provider: resolveProvider(this.options.config),
+            portal: {},
+            log: () => {},
+          },
+          input,
+        );
+        check();
+        return result;
+      }
       const requested = input.child_id as number | undefined;
       const { guardian, permitted } = await this.permitted(requested, allowedChildIds);
       if (name === "list_children") {
@@ -392,7 +421,7 @@ export class ConnectorRuntime {
   }
 
   private parse(name: string, args: Record<string, unknown>) {
-    if (!CONNECTOR_OPERATIONS.some((value) => value === name))
+    if (!CONNECTOR_OPERATIONS.includes(name))
       throw new InputError("This operation is not available through the connector.");
     const operation = getOperation(name)!;
     const parsed = z.object(operation.input).strict().safeParse(args);
@@ -457,7 +486,7 @@ export class ConnectorRuntime {
       fetchImpl: this.options.deps?.fetchImpl,
       // A request the caller abandoned while it waited in the budget's queue is never sent.
       signal: authorization.signal,
-      browser: null,
+      playwrightLoader: this.options.deps?.playwrightLoader,
       beforeRead: validateFocus,
       beforeRecovery: check,
       afterRecovery: async () => {
