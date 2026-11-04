@@ -22,7 +22,10 @@ import {
   type SessionHistorySummary,
   type SessionStore,
   type SessionDeps,
+  type BrowserAuthorization,
+  type QrAuthorizationRequest,
 } from "../core/index.js";
+import { QrLoginSession } from "./qr-session.js";
 
 export const CONNECTOR_OPERATIONS = [
   "list_children",
@@ -35,6 +38,7 @@ export interface ConnectorRuntimeOptions {
   store: SessionStore;
   identityStore: { read(): string | undefined; write(id: string): void };
   redirectUri: string;
+  qrLogin?: boolean;
   deps?: SessionDeps;
   now?: () => number;
   loginTimeoutMs?: number;
@@ -76,6 +80,7 @@ interface Pending {
   accept?: (code: string) => void;
   reject?: (error: Error) => void;
   timer?: ReturnType<typeof setTimeout>;
+  qr?: QrLoginSession;
 }
 function loginError(reason: string): AgentError {
   return new AgentError({
@@ -98,6 +103,9 @@ export class ConnectorRuntime {
 
   constructor(private readonly options: ConnectorRuntimeOptions) {
     this.now = options.now ?? Date.now;
+    const browserAuthorization: BrowserAuthorization = ({ url, state }) =>
+      this.authorize(url, state);
+    if (options.qrLogin) browserAuthorization.qr = (request) => this.authorizeQr(request);
     this.manager = createSessionManager(options.config, {
       now: this.now,
       // One process tracks its own login (this.pending); no marker is written to the data disk.
@@ -105,7 +113,7 @@ export class ConnectorRuntime {
       ...options.deps,
       store: options.store,
       redirectUri: options.redirectUri,
-      browserAuthorization: ({ url, state }) => this.authorize(url, state),
+      browserAuthorization,
     });
     // Keepalive ticks wait their turn in the same queue as reads, and end with the connector.
     this.keepalive = createKeepalive(options.config, this.manager, {
@@ -125,6 +133,34 @@ export class ConnectorRuntime {
   }
 
   private publishUrl?: (value: { url: string }) => void;
+  private authorizeQr(request: QrAuthorizationRequest): Promise<string> {
+    const pending = this.pending!;
+    const result = this.authorize("/owner/schoolsoft/qr", request.state);
+    pending.qr = new QrLoginSession(
+      request,
+      this.now,
+      () =>
+        this.pending === pending &&
+        !pending.cancelled &&
+        !!pending.accept &&
+        this.now() < pending.expires!,
+      (code) => {
+        this.callback(request.state, code);
+      },
+      () => this.cancelLogin("upstream"),
+    );
+    return result;
+  }
+  qrImage(): string | undefined {
+    return this.pending?.qr?.image();
+  }
+  cancelQrLogin(): void {
+    if (this.pending?.qr) this.cancelLogin();
+  }
+  async qrStatus(): Promise<"pending" | "complete" | "failed"> {
+    await this.pending?.qr?.poll();
+    return this.pending ? "pending" : this.lastLoginError ? "failed" : "complete";
+  }
   private authorize(url: string, state: string): Promise<string> {
     const pending = this.pending!;
     return new Promise((resolve, reject) => {
@@ -191,7 +227,7 @@ export class ConnectorRuntime {
     return true;
   }
 
-  private cancelLogin(reason: "expired" | "cancelled" = "cancelled"): void {
+  private cancelLogin(reason: "expired" | "cancelled" | "upstream" = "cancelled"): void {
     if (!this.pending || this.pending.cancelled) return;
     this.lastLoginError = reason;
     this.pending.cancelled = true;

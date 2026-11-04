@@ -33,7 +33,31 @@ the VPN; no browser or localhost listener on the Docker host is involved.
 SchoolSoft must accept this redirect URI. Upstream has only verified its local
 callback with a real account; the external HTTPS callback remains an acceptance
 test. Do not claim successful live authentication until the parent completes it.
-There is no BankID automation or QR-code relay.
+There is no automatic identification: the parent always approves in BankID.
+
+### Direct BankID when the HTTPS callback is refused
+
+Set `SCHOOLSOFT_LOGIN_MODE=qr` for guardian tenants using direct BankID. The
+owner page then displays the rotating QR image itself, behind its password and
+session cookie. The provider starts and checks the challenge using the
+registered guardian app redirect `com.schoolsoft.vapp://`, retains the session
+handle and PKCE verifier in the server process, validates the returned code and
+state, and exchanges the code on the server. Nothing launches that app scheme in
+the client's browser. Token storage and background refresh are unchanged.
+
+This mode supports the `parent` / `vApp` client. It is separate from a tenant's
+SAML login and remains opt-in. On 2026-11-04, the direct BankID completion endpoint
+rejected arbitrary HTTPS and localhost callbacks with `Ingen klient`; the
+registered guardian scheme passed that client validation. QR startup and its
+first pending check work live. A complete guardian approval and code exchange
+remain a human acceptance test until recorded separately.
+
+Only a logged-in owner can start or view a challenge. Starts require CSRF and
+same-origin checks; polls are serialized, limited to one per three seconds,
+and stop on expiry or failure. State and a challenge cannot survive a process
+restart, but a completed encrypted session does. Late results from a cancelled
+challenge cannot complete a later login. The QR image has an isolated SVG policy;
+the page's script is admitted by its exact hash.
 
 ## Local MCP clients
 

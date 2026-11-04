@@ -17,6 +17,7 @@ import type { PersistedSession } from "../../../core/session/store.js";
 import type { SchoolsoftSession, SchoolsoftCredentials } from "../session.js";
 import type { SessionTokens } from "../tokens.js";
 import { runBrowserLogin } from "./browser-flow.js";
+import { runQrLogin } from "./qr-flow.js";
 import {
   DEFAULT_USER_TYPE,
   DEFAULT_CLIENT_ID_BY_USER_TYPE,
@@ -57,16 +58,27 @@ export class BankIdBrowserStrategy implements AuthStrategy<SchoolsoftSession> {
 
   async login(session: SchoolsoftSession): Promise<LoginInfo> {
     const held = session.tokens;
-    const { result } = await runBrowserLogin({
-      school: held.school,
-      orgid: this.options.orgid,
-      userType: this.userType,
-      clientId: this.clientId,
-      port: this.options.callbackPort,
-      openBrowser: this.options.openBrowser,
-      browserAuthorization: this.options.browserAuthorization,
-      redirectUri: this.options.redirectUri,
-    });
+    const qr = this.options.browserAuthorization?.qr;
+    const result = qr
+      ? await runQrLogin({
+          school: held.school,
+          userType: this.userType,
+          clientId: this.clientId,
+          fetchImpl: this.options.fetchImpl,
+          authorize: qr,
+        })
+      : (
+          await runBrowserLogin({
+            school: held.school,
+            orgid: this.options.orgid,
+            userType: this.userType,
+            clientId: this.clientId,
+            port: this.options.callbackPort,
+            openBrowser: this.options.openBrowser,
+            browserAuthorization: this.options.browserAuthorization,
+            redirectUri: this.options.redirectUri,
+          })
+        ).result;
     const tokens = await exchangeCode({
       school: held.school,
       clientId: this.clientId,

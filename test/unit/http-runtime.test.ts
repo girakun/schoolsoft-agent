@@ -47,6 +47,7 @@ function fixture(
     now?: () => number;
     keepalive?: string;
     timer?: FakeTimer;
+    qrLogin?: boolean;
   } = {},
 ) {
   const store = new MemorySessionStore();
@@ -66,6 +67,7 @@ function fixture(
     }),
     keepaliveDeps: options.timer ? { timer: options.timer, random: () => 0 } : undefined,
     redirectUri: "https://parent.example/school/callback",
+    qrLogin: options.qrLogin,
     store,
     identityStore: {
       read: () => identity,
@@ -323,6 +325,64 @@ test("wrong guardian never becomes available and credentials are cleared", async
   await f.runtime.close();
 });
 
+test("QR login delivers a code internally and persists the same refreshable guardian session", async () => {
+  const f = fixture({ qrLogin: true });
+  assert.equal(f.runtime.qrImage(), undefined);
+  f.override((url) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith("/bankid/secure"))
+      return {
+        sessionId: "synthetic",
+        QRCode: Buffer.from("<svg>initial</svg>").toString("base64"),
+      };
+    if (u.pathname.endsWith("/bankid/secure/collect")) return { username: "Synthetic" };
+    if (u.pathname.endsWith("/bankid/secure/redirect"))
+      return {
+        redirect_uri:
+          "com.schoolsoft.vapp://?" +
+          new URLSearchParams({ state: u.searchParams.get("state")!, code: "CODE" }),
+      };
+    return undefined;
+  });
+  assert.deepEqual(await f.runtime.beginLogin(), { url: "/owner/schoolsoft/qr" });
+  assert.equal(f.runtime.qrImage(), "<svg>initial</svg>");
+  assert.equal(await f.runtime.qrStatus(), "pending");
+  await f.runtime.execute("list_children", {}, [100]);
+  assert.equal(await f.runtime.qrStatus(), "complete");
+  assert.equal(f.runtime.qrImage(), undefined);
+  assert.ok(f.store.load());
+  await f.runtime.close();
+});
+test("QR failures stop the login and expose only a failed status", async () => {
+  const f = fixture({ qrLogin: true });
+  f.override((url) =>
+    url.includes("/bankid/secure")
+      ? { sessionId: "synthetic", QRCode: Buffer.from("<svg>initial</svg>").toString("base64") }
+      : undefined,
+  );
+  await f.runtime.beginLogin();
+  f.fail();
+  await f.runtime.qrStatus();
+  await assert.rejects(f.runtime.execute("list_children", {}, [100]));
+  assert.equal(await f.runtime.qrStatus(), "failed");
+  assert.equal(f.runtime.qrImage(), undefined);
+  await f.runtime.close();
+});
+test("owner can cancel a QR login immediately without clearing other app grants", async () => {
+  const f = fixture({ qrLogin: true });
+  f.runtime.cancelQrLogin();
+  f.override((url) =>
+    url.includes("/bankid/secure")
+      ? { sessionId: "synthetic", QRCode: Buffer.from("<svg>initial</svg>").toString("base64") }
+      : undefined,
+  );
+  await f.runtime.beginLogin();
+  f.runtime.cancelQrLogin();
+  await assert.rejects(f.runtime.execute("list_children", {}, [100]));
+  assert.equal(await f.runtime.qrStatus(), "failed");
+  assert.equal(f.runtime.qrImage(), undefined);
+  await f.runtime.close();
+});
 test("deadline and cancellation terminate pending login and reject late callbacks", async () => {
   let now = 0;
   const f = fixture({ timeout: 20, now: () => now });

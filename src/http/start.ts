@@ -127,6 +127,7 @@ export function composeConnector(
     },
     keepaliveDeps,
     redirectUri: config.publicUrl + "/schoolsoft/callback",
+    qrLogin: config.loginMode === "qr",
   });
   // SCHOOLSOFT_LANG (or the locale) picks the REST fallback language; English otherwise.
   return {

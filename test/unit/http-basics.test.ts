@@ -69,6 +69,11 @@ test("desktop OAuth callbacks require an explicit boolean opt-in", () => {
   for (const value of ["true", "yes", "2", ""])
     assert.throws(() => connectorConfig({ ...env, SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS: value }));
 });
+test("connector QR login is an explicit deployment choice", () => {
+  assert.equal(connectorConfig(env).loginMode, "browser");
+  assert.equal(connectorConfig({ ...env, SCHOOLSOFT_LOGIN_MODE: "qr" }).loginMode, "qr");
+  assert.throws(() => connectorConfig({ ...env, SCHOOLSOFT_LOGIN_MODE: "unknown" }));
+});
 test("encrypted repository authenticates files, writes atomically and survives restart", () => {
   const dir = mkdtempSync(join(tmpdir(), "connector-storage-"));
   const key = Buffer.alloc(32, 3);

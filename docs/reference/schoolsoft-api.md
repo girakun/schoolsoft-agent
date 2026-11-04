@@ -43,6 +43,18 @@ client id that mints guardian tokens.
 
 JWT claims: `sub` (UUID from `https://schoolsoft.se/core/login`, not a user id), `aud: https://schoolsoft.se/eva-backend`, `user_type`, `login_method` (`SAML`), `client_id`, `iat`, `exp`.
 
+### Direct BankID callback validation
+
+Observed on 2026-11-04: native BankID QR startup and the first pending poll
+accept the guardian client with an HTTPS return address, but completion refuses
+that address and localhost with `Ingen klient`. The registered
+`com.schoolsoft.vapp://` return passes the completion endpoint's client check.
+The connector's opt-in QR mode therefore retains this return and PKCE on the
+server, displays the base64-encoded SVG from `/login/parent/bankid/secure`, checks
+`/secure/collect`, and exchanges the result of `/secure/redirect` only after the
+human's approval. The returned state and native URI are verified before a code
+is accepted. No identification is automated. See [private network deployment](../deployment/traefik.md).
+
 ## Eva API (Bearer token)
 
 The native app's backend. Header: `Authorization: Bearer <access_token>`.

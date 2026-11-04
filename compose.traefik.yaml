@@ -20,6 +20,7 @@ services:
       PORT: "3000"
       SCHOOLSOFT_PUBLIC_URL: ${SCHOOLSOFT_PUBLIC_URL:?Set the private HTTPS origin}
       SCHOOLSOFT_SCHOOL: ${SCHOOLSOFT_SCHOOL:?Set the SchoolSoft tenant slug}
+      SCHOOLSOFT_LOGIN_MODE: ${SCHOOLSOFT_LOGIN_MODE:-browser}
       SCHOOLSOFT_ADMIN_PASSWORD: ${SCHOOLSOFT_ADMIN_PASSWORD:?Generate an owner password}
       SCHOOLSOFT_STORAGE_KEY: ${SCHOOLSOFT_STORAGE_KEY:?Generate a storage key}
       SCHOOLSOFT_STATE_DIR: /data

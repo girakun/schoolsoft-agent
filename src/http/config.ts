@@ -7,6 +7,7 @@ export interface ConnectorConfig {
   proxyHops: number;
   /** Permit desktop MCP clients to receive OAuth codes on their loopback listener. */
   allowLoopbackClients?: boolean;
+  loginMode?: "browser" | "qr";
   adminPassword: string;
   storageKey: Buffer;
   stateDir: string;
@@ -62,9 +63,13 @@ export function connectorConfig(env: Record<string, string | undefined>): Connec
   const loopback = env.SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS ?? "0";
   if (loopback !== "0" && loopback !== "1")
     throw new InputError("SCHOOLSOFT_ALLOW_LOOPBACK_CLIENTS must be 0 or 1");
+  const loginMode = env.SCHOOLSOFT_LOGIN_MODE ?? "browser";
+  if (loginMode !== "browser" && loginMode !== "qr")
+    throw new InputError("SCHOOLSOFT_LOGIN_MODE must be browser or qr");
   return {
     proxyHops,
     allowLoopbackClients: loopback === "1",
+    loginMode,
     publicUrl: url.origin,
     adminPassword,
     storageKey,

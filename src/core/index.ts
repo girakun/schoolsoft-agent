@@ -2,6 +2,7 @@
  * Public surface of the core. Adapters (src/mcp, src/cli, future src/http)
  * import ONLY from this module — enforced by scripts/check-boundaries.ts.
  */
+export type { QrAuthorizationRequest } from "./provider/types.js";
 export {
   type Config,
   type ConfigSource,

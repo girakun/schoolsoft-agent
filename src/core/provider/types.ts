@@ -31,7 +31,19 @@ export interface ProviderSession {
  * supplied state, reject errors/replays and resolve only with a verified code.
  * The PKCE verifier stays inside the provider and is never exposed to the host.
  */
-export type BrowserAuthorization = (request: { url: string; state: string }) => Promise<string>;
+export interface QrAuthorizationRequest {
+  state: string;
+  qrSvg: string;
+  /** Check a human-approved challenge; credentials and provider session ids stay private. */
+  poll(): Promise<{ qrSvg?: string; code?: string }>;
+}
+export type BrowserAuthorization = ((request: {
+  url: string;
+  state: string;
+}) => Promise<string>) & {
+  /** An owner-controlled browser can display a QR challenge instead of following a redirect. */
+  qr?: (request: QrAuthorizationRequest) => Promise<string>;
+};
 
 /**
  * What a provider's live session gets: the process's request budget, which
